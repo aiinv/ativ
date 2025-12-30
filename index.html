@@ -1,16 +1,321 @@
-<html>
+<!DOCTYPE html>
+<html lang="zh-CN">
 <head>
     <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ativ</title>
     <style>
-        body, html { margin: 0; padding: 0; height: 99.99%; }
-        iframe { border: none; width: 99.99%; height: 99.99%; }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body, html {
+            height: 100%;
+            overflow: hidden;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background: #f5f5f5;
+        }
+        
+        #container {
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        #header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        #title {
+            font-size: 18px;
+            font-weight: 600;
+        }
+        
+        #status {
+            font-size: 14px;
+            background: rgba(255,255,255,0.2);
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-weight: 500;
+        }
+        
+        #loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background: white;
+        }
+        
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-bottom: 15px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        #iframe-container {
+            flex-grow: 1;
+            position: relative;
+            overflow: hidden;
+            background: white;
+        }
+        
+        #main-iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+            display: block;
+            background: white;
+        }
+        
+        #error {
+            display: none;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+            max-width: 400px;
+            width: 90%;
+        }
+        
+        .error-icon {
+            font-size: 48px;
+            color: #ff4757;
+            margin-bottom: 15px;
+        }
+        
+        #retry-btn {
+            margin-top: 20px;
+            padding: 10px 25px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+        
+        #retry-btn:hover {
+            background: #5a6fd8;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+        }
+        
+        #retry-btn:active {
+            transform: translateY(0);
+        }
+        
+        @media (max-width: 768px) {
+            #header {
+                padding: 12px 15px;
+            }
+            
+            #title {
+                font-size: 16px;
+            }
+            
+            #status {
+                font-size: 12px;
+            }
+        }
     </style>
 </head>
 <body>
-    <iframe src="https://i.ativ.fun:8443" 
-            frameborder="0" 
-            scrolling="yes">
-    </iframe>
+    <div id="container">
+        <div id="header">
+            <div id="title">服务访问</div>
+            <div id="status">正在加载...</div>
+        </div>
+        
+        <div id="loading">
+            <div class="spinner"></div>
+            <p>正在连接服务器，请稍候...</p>
+        </div>
+        
+        <div id="iframe-container">
+            <iframe 
+                id="main-iframe"
+                src="https://i.ativ.fun:8443" 
+                frameborder="0" 
+                scrolling="yes"
+                allow="camera; microphone; fullscreen; geolocation"
+                onload="iframeLoaded()"
+                onerror="iframeError()">
+            </iframe>
+            
+            <div id="error">
+                <div class="error-icon">⚠️</div>
+                <h3>连接失败</h3>
+                <p>无法连接到服务器，请检查：</p>
+                <ul style="text-align: left; margin: 15px 0; padding-left: 20px;">
+                    <li>网络连接是否正常</li>
+                    <li>服务器地址是否正确</li>
+                    <li>是否允许加载不安全内容（HTTPS页面加载HTTP资源）</li>
+                </ul>
+                <button id="retry-btn" onclick="retryConnection()">重新连接</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let retryCount = 0;
+        const maxRetries = 3;
+        
+        // 页面加载完成
+        window.addEventListener('DOMContentLoaded', function() {
+            updateStatus('正在初始化...');
+        });
+        
+        // iframe 加载成功
+        function iframeLoaded() {
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('error').style.display = 'none';
+            document.getElementById('main-iframe').style.display = 'block';
+            updateStatus('已连接');
+            
+            // 尝试设置高度适配（如果同域）
+            setTimeout(tryAdjustIframeHeight, 1000);
+        }
+        
+        // iframe 加载失败
+        function iframeError() {
+            retryCount++;
+            
+            if (retryCount < maxRetries) {
+                // 自动重试
+                setTimeout(retryConnection, 2000 * retryCount);
+                updateStatus(`连接失败，正在重试 (${retryCount}/${maxRetries})`);
+            } else {
+                // 显示错误信息
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('error').style.display = 'block';
+                updateStatus('连接失败');
+            }
+        }
+        
+        // 重试连接
+        function retryConnection() {
+            retryCount = 0;
+            document.getElementById('loading').style.display = 'flex';
+            document.getElementById('error').style.display = 'none';
+            updateStatus('正在重连...');
+            
+            // 重新加载 iframe
+            const iframe = document.getElementById('main-iframe');
+            iframe.src = iframe.src;
+        }
+        
+        // 更新状态
+        function updateStatus(message) {
+            const statusEl = document.getElementById('status');
+            statusEl.textContent = message;
+            
+            // 根据状态改变颜色
+            if (message.includes('失败')) {
+                statusEl.style.background = 'rgba(255, 71, 87, 0.2)';
+                statusEl.style.color = '#ff4757';
+            } else if (message === '已连接') {
+                statusEl.style.background = 'rgba(46, 213, 115, 0.2)';
+                statusEl.style.color = '#2ed573';
+            } else {
+                statusEl.style.background = 'rgba(255, 165, 2, 0.2)';
+                statusEl.style.color = '#ffa502';
+            }
+        }
+        
+        // 尝试调整 iframe 高度（同域情况下）
+        function tryAdjustIframeHeight() {
+            const iframe = document.getElementById('main-iframe');
+            
+            try {
+                // 尝试访问 iframe 内部文档（同域时才有效）
+                const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+                
+                if (iframeDoc && iframeDoc.body) {
+                    // 获取内部内容高度
+                    const contentHeight = Math.max(
+                        iframeDoc.body.scrollHeight,
+                        iframeDoc.documentElement.scrollHeight,
+                        iframeDoc.body.offsetHeight,
+                        iframeDoc.documentElement.offsetHeight,
+                        iframeDoc.body.clientHeight,
+                        iframeDoc.documentElement.clientHeight
+                    );
+                    
+                    // 设置 iframe 高度
+                    iframe.style.height = contentHeight + 'px';
+                    
+                    // 监听内部内容变化（如果有 MutationObserver）
+                    if (typeof MutationObserver !== 'undefined') {
+                        const observer = new MutationObserver(function() {
+                            const newHeight = Math.max(
+                                iframeDoc.body.scrollHeight,
+                                iframeDoc.documentElement.scrollHeight
+                            );
+                            iframe.style.height = newHeight + 'px';
+                        });
+                        
+                        observer.observe(iframeDoc.body, {
+                            childList: true,
+                            subtree: true,
+                            attributes: true
+                        });
+                    }
+                }
+            } catch (e) {
+                // 跨域情况下无法访问 iframe 内部，保持默认设置
+                console.log('跨域限制，无法调整 iframe 高度');
+            }
+        }
+        
+        // 监听窗口大小变化
+        window.addEventListener('resize', function() {
+            // 如果 iframe 内容变化，尝试重新调整高度
+            setTimeout(tryAdjustIframeHeight, 100);
+        });
+        
+        // 添加键盘快捷键支持
+        document.addEventListener('keydown', function(e) {
+            // F5 刷新
+            if (e.key === 'F5' || (e.ctrlKey && e.key === 'r')) {
+                e.preventDefault();
+                retryConnection();
+            }
+            
+            // ESC 键显示/隐藏 iframe
+            if (e.key === 'Escape') {
+                const iframe = document.getElementById('main-iframe');
+                iframe.style.display = iframe.style.display === 'none' ? 'block' : 'none';
+            }
+        });
+    </script>
 </body>
 </html>
